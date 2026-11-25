@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.wordleaf.study" android:versionCode="1" android:versionName="1.0.0">
+    package="com.wordleaf.study" android:versionCode="2" android:versionName="1.0.1">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
     <application android:label="词叶 Wordleaf" android:icon="@drawable/leaf"
         android:allowBackup="false" android:fullBackupContent="false"
