@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.wordleaf.probe">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
+    <application android:label="Wordleaf upgrade test"/>
+    <instrumentation android:name=".UpgradeProbe" android:targetPackage="com.wordleaf.study"/>
+</manifest>

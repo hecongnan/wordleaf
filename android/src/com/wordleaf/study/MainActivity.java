@@ -21,9 +21,26 @@ public final class MainActivity extends Activity {
     private static final String START = "https://" + HOST + "/index.html";
     private WebView browser;
     private AppUpdates updates;
+    private static final int PICK_BACKUP = 209, WRITE_BACKUP = 210;
+    private android.webkit.ValueCallback<Uri[]> picked;
+    private java.io.File pendingExport() { return new java.io.File(getCacheDir(), "pending-export.json"); }
+    private void backupError() {
+        android.widget.Toast.makeText(this, "无法读写备份文件，请重新选择位置。", android.widget.Toast.LENGTH_LONG).show();
+    }
     public final class LocalApp {
         @android.webkit.JavascriptInterface public void checkUpdate() {
             runOnUiThread(() -> updates.check());
+        }
+        @android.webkit.JavascriptInterface public void exportBackup(String json, String name) {
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(pendingExport())) {
+                out.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } catch (IOException e) { runOnUiThread(() -> backupError()); return; }
+            runOnUiThread(() -> {
+                Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/json").putExtra(Intent.EXTRA_TITLE, name);
+                try { startActivityForResult(save, WRITE_BACKUP); }
+                catch (android.content.ActivityNotFoundException e) { pendingExport().delete(); backupError(); }
+            });
         }
         @android.webkit.JavascriptInterface public String readProgress() {
             return getSharedPreferences("learning", MODE_PRIVATE).getString("snapshot", "");
@@ -39,6 +56,24 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == PICK_BACKUP && picked != null) {
+            picked.onReceiveValue(result == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null);
+            picked = null;
+        }
+        if (request == WRITE_BACKUP) {
+            if (result != RESULT_OK || data == null || data.getData() == null) { pendingExport().delete(); return; }
+            final Uri uri = data.getData();
+            new Thread(() -> {
+                try (java.io.InputStream in = new java.io.FileInputStream(pendingExport());
+                     java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (out == null) throw new IOException("Missing output");
+                    byte[] buf = new byte[16384]; int count;
+                    while ((count = in.read(buf)) != -1) out.write(buf, 0, count);
+                } catch (IOException | SecurityException e) { runOnUiThread(this::backupError); return; }
+                finally { pendingExport().delete(); }
+                runOnUiThread(() -> android.widget.Toast.makeText(this, "备份文件已保存", android.widget.Toast.LENGTH_SHORT).show());
+            }, "wordleaf-export").start();
+        }
         if (request == AppUpdates.INSTALL_ACCESS) updates.afterSettings();
     }
 
@@ -63,6 +98,15 @@ public final class MainActivity extends Activity {
         settings.setAllowContentAccess(false);
         updates = new AppUpdates(this);
         browser.addJavascriptInterface(new LocalApp(), "WordleafLocal");
+        browser.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, android.webkit.ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (picked != null) picked.onReceiveValue(null);
+                picked = callback;
+                try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), PICK_BACKUP); }
+                catch (android.content.ActivityNotFoundException e) { picked.onReceiveValue(null); picked=null; backupError(); }
+                return true;
+            }
+        });
         browser.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();

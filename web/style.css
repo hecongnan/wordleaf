@@ -59,3 +59,4 @@ button.volume{display:block;padding:0;width:100%;aspect-ratio:.74;max-width:235p
 .focus-mode #sheet{padding-bottom:max(74px,env(safe-area-inset-bottom) + 64px)}
 .focus-mode .previous-word{position:absolute;left:max(16px,env(safe-area-inset-left));bottom:max(15px,env(safe-area-inset-bottom));min-height:44px;padding:8px 15px;border:1px solid #cdd8cb;border-radius:24px;background:var(--paper);color:#36543d;font-size:14px}
 .previous-word:disabled{opacity:.45;cursor:default}
+.backup-entry{margin:16px 0 28px}.backup-entry .outline{min-height:44px}#backup-status{margin-top:12px}dialog:has(#backup-status),dialog:has([data-act=applyProgress]){max-height:85dvh;overflow:auto}

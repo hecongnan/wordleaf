@@ -28,7 +28,7 @@ function persist(){
  const snapshot=JSON.stringify(st);let saved=false;
  try{localStorage.setItem('wordleaf1',snapshot);saved=true}catch{}
  if(localApp){try{saved=localApp.saveProgress(snapshot)||saved}catch{}}
- if(!saved)notify('未能保存本次学习记录')
+ if(!saved)notify('未能保存本次学习记录');return saved
 }
 const tabs={home:'学习总览',books:'单词书架',review:'复习计划',fuzzy:'模糊单词',saved:'我的收藏'};
 const daily=[
@@ -101,7 +101,7 @@ function render(){
  <div><strong>${Object.values(st.cursor).reduce((a,b)=>a+b,0)}</strong><span>累计学习</span></div></div></div></div>
  <article class="dailyquote"><div class="row"><span class="label">${icon('sun')} 每日一词</span>${btn('dailySound',icon('sound'),'iconbtn')}</div>
  <div class="quotehead"><h2 lang="en">${w[0]}</h2><small>/${w[1]}/</small></div><p>${w[2]}</p><footer>${w[3]}</footer></article></section>
- <div class="row sectionhead"><h2>单词书架</h2><a class="soft" href="#books">查看全部</a></div>${bookGrid()}`;
+ <div class="row sectionhead"><h2>单词书架</h2><a class="soft" href="#books">查看全部</a></div>${bookGrid()}<div class="backup-entry">${btn('backup','学习记录备份','outline')}</div>`;
  }else if(page==='books'){html+='<p class="intro">翻开封面，查看词书介绍与学习进度。</p>'+bookGrid()+'<a class="source" href="https://github.com/RealKai42/qwerty-learner/tree/master/public/dicts" target="_blank" rel="noreferrer">词库来源 · Qwerty Learner</a><a class="source" href="https://github.com/KyleBing/english-vocabulary" target="_blank" rel="noreferrer">双语例句 · English Vocabulary</a><a class="source" href="https://lzctuhao-iqjxs8f9-lzctuhao.4everland.app/2021/0704/folder-ganhuo/xdflevel6/" target="_blank" rel="noreferrer">新东方六级乱序版 · 30 课时词表</a><a class="source" href="https://github.com/RealKai42/qwerty-learner/blob/master/public/dicts/hongbaoshu-2026.json" target="_blank" rel="noreferrer">2026 考研红宝书 · 词表来源</a>'}
  else if(page==='review'){html+='<p class="intro">按记忆表现安排下次复习。</p><div class="item"><h2>到期复习 · '+due.length+' 词</h2><p>'+(due.length?'这些词已到复习时间。':'当前没有到期词条。学习新词后会自动安排复习。')+'</p>'+(due.length?'<div class="actions">'+btn('review','开始复习')+'</div>':'')+'</div>';for(const [,v] of Object.entries(st.due).sort((a,b)=>a[1].at-b[1].at).slice(0,40))html+='<div class="item row"><b>'+esc(v.word.name)+'</b><small>'+new Date(v.at).toLocaleString('zh-CN')+'</small></div>'}
  else if(page==='fuzzy'){
@@ -267,6 +267,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.remove){delete st.saved[b.dataset.remove];persist();render();return}
  const a=b.dataset.act;if(!a)return;
  if(['learn','review','fuzzy'].includes(a))return start(a);
+ if(a==='backup'){backupMenu();return}
  if(a==='checkUpdate'){localApp?.checkUpdate();return}
  if(a==='close')return dialog.close();if(a==='dailySound')return speak(pick()[0]);
  if(a==='goal'){show('<h2>每日新词目标</h2><form id="goal"><label>每天学习 <input type="number" min="1" max="200" required value="'+st.goal+'"> 个新词</label><div class="actions"><button class="primary">保存目标</button></div></form>');$('#goal').onsubmit=e=>{e.preventDefault();st.goal=Number($('#goal input').value);persist();dialog.close()};return}
@@ -294,3 +295,55 @@ function pressFeedback(event){
 }
 document.addEventListener('pointerdown',e=>{if(e.isPrimary&&e.button===0)pressFeedback(e)});
 document.addEventListener('keydown',e=>{if(!e.repeat&&['Enter',' '].includes(e.key))pressFeedback(e)});
+
+const undoKey='wordleaf-before-import';
+let importPreview;
+function backupMenu(message=''){
+ importPreview=null;
+ let undo=false;try{undo=!!localStorage.getItem(undoKey)}catch{}
+ show('<h2>学习记录备份</h2><p>导出到文件，可在换机或重新安装后恢复进度。</p><div class="actions">'+
+  btn('exportProgress','导出备份')+btn('importProgress','选择备份文件','outline')+
+  (undo?btn('undoProgress','恢复到上次导入前','soft'):'')+'</div><input id="backup-file" type="file" accept=".json,application/json" hidden><p role="status" id="backup-status"></p>');
+ $('#backup-status').textContent=message;
+ $('#backup-file').onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{
+   if(file.size>ProgressBackup.limit)throw Error('文件超过 32 MB。');
+   previewBackup(await file.text());
+  }catch(error){backupMenu(error.message)}
+ };
+}
+function previewBackup(text,undo=false){
+ try{
+  const {date,progress}=ProgressBackup.decode(text,books);
+  importPreview={progress,undo};
+  const counts=Object.entries(progress.cursor).map(([index,n])=>'<li>'+esc(books[index][0])+' · '+n+' / '+books[index][3]+'</li>').join('');
+  show('<h2>'+ (undo?'恢复导入前的记录':'导入备份预览')+'</h2><small>'+esc(new Date(date).toLocaleString())+'</small><p>当前词书：'+esc(books[progress.selected][0])+'。每日目标 '+progress.goal+' 词。</p><ul>'+counts+'</ul><p>收藏 '+Object.keys(progress.saved).length+' 词 · 模糊单词 '+Object.keys(progress.fuzzy).length+' 词 · 复习计划 '+Object.keys(progress.due).length+' 词</p><p>确认后将替换本机学习记录。</p><div class="actions">'+btn('applyProgress','确认恢复')+btn('backup','取消','outline')+'</div>');
+ }catch(error){backupMenu(error.message)}
+}
+function applyBackup(){
+ if(!importPreview)return;
+ const {progress,undo}=importPreview,old=st;
+ try{
+  if(!undo)localStorage.setItem(undoKey,ProgressBackup.encode(old,books));
+  st={...progress,revision:old.revision||0};
+  if(!persist()){st=old;throw Error('写入失败，已保留当前进度。')}
+  importPreview=null;render();backupMenu('学习记录已恢复。')
+ }catch(error){st=old;backupMenu('未完成恢复：'+error.message)}
+}
+document.addEventListener('click',event=>{
+ const action=event.target.closest('button')?.dataset.act;
+ try{
+  if(action==='exportProgress'){
+   const data=ProgressBackup.encode(st,books);
+   if(new Blob([data]).size>ProgressBackup.limit)throw Error('备份超过 32 MB。');
+   const name='Wordleaf-'+dateKey()+'.json';
+   if(localApp?.exportBackup){localApp.exportBackup(data,name);return}
+   const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+   const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000)
+  }
+  if(action==='importProgress'){$('#backup-file').click()}
+  if(action==='undoProgress')previewBackup(localStorage.getItem(undoKey),true);
+  if(action==='applyProgress')applyBackup()
+ }catch(error){backupMenu(error.message)}
+});

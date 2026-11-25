@@ -1,0 +1,37 @@
+name: Android upgrade regression
+on: [workflow_dispatch, push]
+permissions:
+  contents: read
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEST_STORE_PASS: ephemeral-ci-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Prepare baseline APK and candidate under one temporary signer
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          bash scripts/build-apk.sh
+          gh release download v1.1.0 --repo hecongnan/wordleaf -p Wordleaf-1.1.0.apk -D build
+          keytool -genkeypair -keystore build/ci.p12 -storepass:env TEST_STORE_PASS -alias test -keyalg RSA -validity 10 -dname CN=Wordleaf-CI
+          signer="$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          java -jar "$signer" sign --ks build/ci.p12 --ks-pass env:TEST_STORE_PASS --out build/baseline.apk build/Wordleaf-1.1.0.apk
+          java -jar "$signer" sign --ks build/ci.p12 --ks-pass env:TEST_STORE_PASS --out build/candidate.apk build/wordleaf-unsigned.apk
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          script: ANDROID_SERIAL=emulator-5554 OLD_APK=build/baseline.apk NEW_APK=build/candidate.apk TEST_KEYSTORE=build/ci.p12 bash scripts/test-upgrade.sh
