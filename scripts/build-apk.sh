@@ -9,7 +9,7 @@ trap 'rm -rf "$stage"' EXIT
 mkdir "$stage/classes"
 "$tools/aapt2" compile --dir android/res -o "$stage/resources.zip"
 "$tools/aapt2" link -o "$stage/base.apk" --manifest android/AndroidManifest.xml -I "$platform" -A web "$stage/resources.zip"
-javac --release 8 -classpath "$platform" -d "$stage/classes" android/src/com/wordleaf/study/MainActivity.java
+javac --release 8 -classpath "$platform" -d "$stage/classes" android/src/com/wordleaf/study/*.java
 jar cf "$stage/classes.jar" -C "$stage/classes" .
 java -cp "$tools/lib/d8.jar" com.android.tools.r8.D8 --min-api 26 --lib "$platform" --output "$stage" "$stage/classes.jar"
 python3 - "$stage" <<'PY'

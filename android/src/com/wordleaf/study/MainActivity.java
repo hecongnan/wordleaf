@@ -20,6 +20,27 @@ public final class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START = "https://" + HOST + "/index.html";
     private WebView browser;
+    private AppUpdates updates;
+    public final class LocalApp {
+        @android.webkit.JavascriptInterface public void checkUpdate() {
+            runOnUiThread(() -> updates.check());
+        }
+        @android.webkit.JavascriptInterface public String readProgress() {
+            return getSharedPreferences("learning", MODE_PRIVATE).getString("snapshot", "");
+        }
+        @android.webkit.JavascriptInterface public boolean saveProgress(String value) {
+            try {
+                org.json.JSONObject data = new org.json.JSONObject(value);
+                if (!data.has("cursor") || !data.has("days")) return false;
+                return getSharedPreferences("learning", MODE_PRIVATE).edit().putString("snapshot", value).commit();
+            } catch (org.json.JSONException e) { return false; }
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == AppUpdates.INSTALL_ACCESS) updates.afterSettings();
+    }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -40,6 +61,8 @@ public final class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        updates = new AppUpdates(this);
+        browser.addJavascriptInterface(new LocalApp(), "WordleafLocal");
         browser.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -48,7 +71,10 @@ public final class MainActivity extends Activity {
                         && path != null && path.matches("/[A-Za-z0-9_.-]+")) {
                     String name = path.substring(1);
                     try {
-                        return new WebResourceResponse(mime(name), "UTF-8", getAssets().open(name));
+                        WebResourceResponse response = new WebResourceResponse(mime(name), "UTF-8", getAssets().open(name));
+                        if ("index.html".equals(name)) response.setResponseHeaders(java.util.Collections.singletonMap(
+                            "Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'"));
+                        return response;
                     } catch (IOException ignored) { /* Return the local 404 below. */ }
                 }
                 return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", null,

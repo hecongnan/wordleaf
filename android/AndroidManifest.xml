@@ -1,9 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.wordleaf.study" android:versionCode="2" android:versionName="1.0.1">
+    package="com.wordleaf.study" android:versionCode="3" android:versionName="1.1.0">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application android:label="词叶 Wordleaf" android:icon="@drawable/leaf"
         android:allowBackup="false" android:fullBackupContent="false"
         android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <provider android:name=".UpdateFile" android:authorities="com.wordleaf.study.updates" android:exported="false" android:grantUriPermissions="true"/>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

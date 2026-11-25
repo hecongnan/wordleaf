@@ -7,9 +7,29 @@ const icon=k=>'<svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><path d="
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateKey=()=>new Date().toLocaleDateString('sv-SE');
 let st={selected:0,cursor:{},days:{},due:{},saved:{},fuzzy:{},goal:20};
-try{Object.assign(st,JSON.parse(localStorage.getItem('wordleaf1'))||{})}catch{}
+const localApp=window.WordleafLocal;
+function readProgress(raw){
+ try{const value=JSON.parse(raw);return value && typeof value.cursor==='object' && typeof value.days==='object'?value:null}catch{return null}
+}
+let stored;
+try{stored=readProgress(localStorage.getItem('wordleaf1'))}catch{}
+if(localApp){
+ const backup=readProgress(localApp.readProgress());
+ if(backup && (!stored || (backup.revision||0)>(stored.revision||0))){
+  stored=backup;try{localStorage.setItem('wordleaf1',JSON.stringify(stored))}catch{}
+ }else if(stored && (!backup || stored.revision!==backup.revision)){
+  localApp.saveProgress(JSON.stringify(stored))
+ }
+}
+if(stored)Object.assign(st,stored);
 const notify=t=>{const n=$('#toast');n.textContent=t;clearTimeout(notify.timer);notify.timer=setTimeout(()=>n.textContent='',2600)};
-function persist(){try{localStorage.setItem('wordleaf1',JSON.stringify(st))}catch{notify('浏览器未能保存本次学习记录')}}
+function persist(){
+ if(localApp)st.revision=(st.revision||0)+1;
+ const snapshot=JSON.stringify(st);let saved=false;
+ try{localStorage.setItem('wordleaf1',snapshot);saved=true}catch{}
+ if(localApp){try{saved=localApp.saveProgress(snapshot)||saved}catch{}}
+ if(!saved)notify('未能保存本次学习记录')
+}
 const tabs={home:'学习总览',books:'单词书架',review:'复习计划',fuzzy:'模糊单词',saved:'我的收藏'};
 const daily=[
  ['embrace','ɪmˈbreɪs','v. 拥抱；欣然接受','Embrace the chance to learn something new.'],
@@ -67,7 +87,7 @@ function render(){
  if(page==='home'){
  const completed=st.cursor[st.selected]||0, percent=Math.min(100,Math.round(done/st.goal*100));
  const covers=['College English','College English','Graduate English','English Major','English Major','New Oriental','2026 Edition'];
- html=`<div class="mast"><h1>学习空间</h1><span class="mastdate">${icon('date')}${$('#date').textContent}</span></div>
+ html=`<div class="mast"><h1>学习空间</h1>${localApp?btn('checkUpdate','检查更新','soft'):'<span class="mastdate">'+icon('date')+$('#date').textContent+'</span>'}</div>
  <article class="feature" style="--binding:${b[4]}">
   <div class="featurecopy"><span class="featurelabel">${icon('book')} 当前词书</span><h2>${b[0]}</h2>
   <p>${b[1]} <span> / </span> ${b[3].toLocaleString()} 个词条</p>
@@ -247,6 +267,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.remove){delete st.saved[b.dataset.remove];persist();render();return}
  const a=b.dataset.act;if(!a)return;
  if(['learn','review','fuzzy'].includes(a))return start(a);
+ if(a==='checkUpdate'){localApp?.checkUpdate();return}
  if(a==='close')return dialog.close();if(a==='dailySound')return speak(pick()[0]);
  if(a==='goal'){show('<h2>每日新词目标</h2><form id="goal"><label>每天学习 <input type="number" min="1" max="200" required value="'+st.goal+'"> 个新词</label><div class="actions"><button class="primary">保存目标</button></div></form>');$('#goal').onsubmit=e=>{e.preventDefault();st.goal=Number($('#goal input').value);persist();dialog.close()};return}
 });
