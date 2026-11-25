@@ -23,3 +23,9 @@ Android 构建需要 Linux、JDK 17 或 21、Python 3、Android SDK Platform 35 
 - 通用考试词库及 2026 考研红宝书：[Qwerty Learner](https://github.com/RealKai42/qwerty-learner/tree/master/public/dicts)
 - 双语例句：[English Vocabulary](https://github.com/KyleBing/english-vocabulary)，许可见 [examples-LICENSE.txt](web/examples-LICENSE.txt)
 - 新东方六级乱序版：[30 课时公开词表](https://lzctuhao-iqjxs8f9-lzctuhao.4everland.app/2021/0704/folder-ganhuo/xdflevel6/)
+
+## 学习记录备份与升级验证
+
+首页底部的「学习记录备份」支持导出 JSON、选择文件预览、确认导入和恢复到上次导入前。请将文件保存至应用目录外。备份包含学习记录、每日目标和词书标识；词库随应用提供。导入会替换当前设备的学习记录。网页和 Android 使用相同的文件格式。
+
+仓库的 Android upgrade regression 工作流在一次性模拟器中安装历史 v1.1.0，在实际 WebView 内背完一词、标记模糊词并收藏，再用 `adb install -r` 覆盖安装当前源码构建的 APK。断言检查下一张词卡，并比对升级前后的学习记录摘要。CI 用同一临时密钥签署两份安装包，正式签名密钥仅在本地保存。该测试验证覆盖安装及其数据迁移，系统安装权限、取消和下载中断属于单独的更新器场景。
