@@ -1,0 +1,7 @@
+/build/
+*.jks
+*.p12
+*.keystore
+*.apk
+*.idsig
+.env
