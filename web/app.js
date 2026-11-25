@@ -142,14 +142,49 @@ function card(){
   show('<h2>'+(s.entries.length?'本组背诵完成':'当前没有待背词条')+'</h2><p>共完成 '+s.pos+' 个词条。</p><div class="actions">'+btn('return','返回'+(s.mode==='fuzzy'?'模糊单词':'学习空间'))+'</div>');return
  }
  const w=entry.word,phonetic=w.usphone||w.ukphone;
+ let sheet=$('#sheet');
+ if(!sheet){
+  show('<button id="sheet"></button><span id="flash" role="status"></span>');
+  sheet=$('#sheet');sheet.focus({preventScroll:true})
+ }
+ $('#flash').textContent='';
+ const moving=!matchMedia('(prefers-reduced-motion: reduce)').matches && typeof sheet.animate==='function';
+ const previous=sheet.querySelector('.reading');
+ const previousTop=previous?.querySelector('.focus-word').getBoundingClientRect().top;
+ // Keep the tap surface and keyboard focus stable throughout the transition.
+ const reading=document.createElement('span');reading.className='reading';
  let body='<strong class="focus-word" lang="en">'+esc(w.name)+'</strong>';
  if(s.reveal){
+  body+='<span class="word-details">';
   if(phonetic)body+='<span class="phonetic">/'+esc(phonetic)+'/</span>';
   body+='<span class="definition">'+esc(w.trans.join('；'))+'</span>';
-  if(w.example)body+='<span class="example"><span lang="en">'+esc(w.example[0])+'</span><span>'+esc(w.example[1])+'</span></span>'
+  if(w.example)body+='<span class="example"><span lang="en">'+esc(w.example[0])+'</span><span>'+esc(w.example[1])+'</span></span>';
+  body+='</span>'
  }
- show('<button id="sheet" aria-label="'+esc([w.name,s.reveal?w.trans.join('；'):'',s.reveal?w.example?.join(' '):'',s.reveal?'下一个单词':'查看释义'].filter(Boolean).join('。'))+'"><span class="reading">'+body+'</span></button><span id="flash" role="status"></span>');
- $('#sheet').focus({preventScroll:true})
+ reading.innerHTML=body;
+ sheet.setAttribute('aria-label',[w.name,s.reveal?w.trans.join('；'):'',s.reveal?w.example?.join(' '):'',s.reveal?'下一个单词':'查看释义'].filter(Boolean).join('。'));
+ $('#panel .departing')?.remove();
+ if(moving && previous && !s.reveal){
+  const bounds=previous.getBoundingClientRect();
+  previous.classList.add('departing');previous.setAttribute('aria-hidden','true');
+  Object.assign(previous.style,{top:bounds.top+'px',left:bounds.left+'px',width:bounds.width+'px'});
+  $('#panel').append(previous);
+  const fade=previous.animate([{opacity:1,transform:'translateX(0)'},{opacity:0,transform:'translateX(-10px)'}],
+   {duration:130,easing:'ease-out',fill:'forwards'});
+  fade.onfinish=()=>previous.remove()
+ }
+ sheet.replaceChildren(reading);
+ if(!s.reveal)sheet.scrollTop=0;
+ if(!moving)return;
+ const timing={duration:235,easing:'cubic-bezier(.2,.7,.25,1)',fill:'backwards'};
+ if(s.reveal){
+  const title=reading.querySelector('.focus-word');
+  const offset=previousTop===undefined?0:previousTop-title.getBoundingClientRect().top;
+  title.animate([{transform:'translateY('+offset+'px)'},{transform:'none'}],timing);
+  reading.querySelector('.word-details').animate([{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'none'}],{...timing,delay:65})
+ }else if(previous){
+  reading.animate([{opacity:0,transform:'translateX(13px)'},{opacity:1,transform:'none'}],{...timing,delay:65})
+ }
 }
 function flash(text){const n=$('#flash');if(!n)return;n.textContent=text;clearTimeout(flashTimer);flashTimer=setTimeout(()=>{n.textContent=''},1100)}
 function addFuzzy(){
