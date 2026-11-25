@@ -94,7 +94,7 @@ function render(){
 }
 const dialog=$('#dialog');
 function show(body){$('#panel').innerHTML=body;if(!dialog.open)dialog.showModal()}
-let tapTimer,flashTimer,tapPoint;
+let tapTimer,flashTimer,tapPoint,exitMotion;
 const cache={};
 async function loadBook(book){
  if(!cache[book]){
@@ -102,7 +102,7 @@ async function loadBook(book){
  }
  return cache[book]
 }
-function clearTap(){clearTimeout(tapTimer);tapTimer=0;tapPoint=null}
+function clearTap(){clearTimeout(tapTimer);tapTimer=0;tapPoint=null;exitMotion?.cancel();exitMotion=null}
 function leave(){
  if(location.hash==='#study')history.back();
  else dialog.close()
@@ -128,63 +128,55 @@ async function start(mode){
    entries=entries.map(e=>{const [id,index]=e.key.split('-').map(Number);return {key:e.key,word:cache[id][index]||e.word}})
   }
   if(token!==loadId||!dialog.open)return;
-  session={mode,book,entries,pos:0,reveal:false};
+  session={mode,book,entries,pos:0,completed:0,reveal:false};
   location.hash='study';card()
  }catch{if(token===loadId)show('<h2>词书加载失败</h2><p>请检查连接后重试。</p><div class="actions">'+btn(mode,'重新加载')+'</div>')}
 }
 const wordId=w=>'w:'+w.name.trim().toLowerCase();
 function brief(w){return {name:w.name,trans:w.trans}}
-function card(){
+function card(direction=1){
  clearTap();clearTimeout(flashTimer);
  const s=session,entry=s.entries[s.pos];
  dialog.classList.toggle('focus-mode',!!entry);document.body.classList.toggle('studying',!!entry);
  if(!entry){
-  show('<h2>'+(s.entries.length?'本组背诵完成':'当前没有待背词条')+'</h2><p>共完成 '+s.pos+' 个词条。</p><div class="actions">'+btn('return','返回'+(s.mode==='fuzzy'?'模糊单词':'学习空间'))+'</div>');return
+  show('<h2>'+(s.entries.length?'本组背诵完成':'当前没有待背词条')+'</h2><p>共完成 '+s.pos+' 个词条。</p><div class="actions">'+(s.pos?btn('previous','上一个单词','outline'):'')+btn('return','返回'+(s.mode==='fuzzy'?'模糊单词':'学习空间'))+'</div>');return
  }
  const w=entry.word,phonetic=w.usphone||w.ukphone;
  let sheet=$('#sheet');
  if(!sheet){
-  show('<button id="sheet"></button><span id="flash" role="status"></span>');
+  show('<button id="sheet"></button><button class="previous-word" data-act="previous" aria-keyshortcuts="ArrowLeft">‹ 上一个单词</button><span id="flash" role="status"></span>');
   sheet=$('#sheet');sheet.focus({preventScroll:true})
  }
+ $('.previous-word').disabled=s.pos===0;
  $('#flash').textContent='';
  const moving=!matchMedia('(prefers-reduced-motion: reduce)').matches && typeof sheet.animate==='function';
- const previous=sheet.querySelector('.reading');
- const previousTop=previous?.querySelector('.focus-word').getBoundingClientRect().top;
- // Keep the tap surface and keyboard focus stable throughout the transition.
- const reading=document.createElement('span');reading.className='reading';
- let body='<strong class="focus-word" lang="en">'+esc(w.name)+'</strong>';
- if(s.reveal){
-  body+='<span class="word-details">';
-  if(phonetic)body+='<span class="phonetic">/'+esc(phonetic)+'/</span>';
-  body+='<span class="definition">'+esc(w.trans.join('；'))+'</span>';
-  if(w.example)body+='<span class="example"><span lang="en">'+esc(w.example[0])+'</span><span>'+esc(w.example[1])+'</span></span>';
-  body+='</span>'
+ const sameWord=sheet.dataset.key===entry.key;
+ let reading=sheet.querySelector('.reading');
+ if(!sameWord){
+  reading=document.createElement('span');reading.className='reading';
+  reading.innerHTML='<strong class="focus-word" lang="en">'+esc(w.name)+'</strong>';
+  sheet.replaceChildren(reading);sheet.dataset.key=entry.key;sheet.scrollTop=0;
+  if(moving && direction)reading.animate([{opacity:0,transform:'translateX('+direction*9+'px)'},{opacity:1,transform:'none'}],
+   {duration:175,easing:'cubic-bezier(.2,.75,.3,1)'})
  }
- reading.innerHTML=body;
+ const title=reading.firstElementChild;
+ const oldTop=title.getBoundingClientRect().top;
+ const details=reading.querySelector('.word-details');
+ if(s.reveal && !details){
+  const content=document.createElement('span');content.className='word-details';
+  content.innerHTML=(phonetic?'<span class="phonetic">/'+esc(phonetic)+'/</span>':'')+
+   '<span class="definition">'+esc(w.trans.join('；'))+'</span>'+
+   (w.example?'<span class="example"><span lang="en">'+esc(w.example[0])+'</span><span>'+esc(w.example[1])+'</span></span>':'');
+  reading.append(content);
+  if(moving)content.animate([{opacity:0,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:190,easing:'ease-out'})
+ }else if(!s.reveal && details){details.remove()}
+ if(moving && sameWord){
+  title.getAnimations().forEach(animation=>animation.cancel());
+  const offset=oldTop-title.getBoundingClientRect().top;
+  if(offset)title.animate([{transform:'translateY('+offset+'px)'},{transform:'none'}],
+   {duration:205,easing:'cubic-bezier(.2,.75,.3,1)'})
+ }
  sheet.setAttribute('aria-label',[w.name,s.reveal?w.trans.join('；'):'',s.reveal?w.example?.join(' '):'',s.reveal?'下一个单词':'查看释义'].filter(Boolean).join('。'));
- $('#panel .departing')?.remove();
- if(moving && previous && !s.reveal){
-  const bounds=previous.getBoundingClientRect();
-  previous.classList.add('departing');previous.setAttribute('aria-hidden','true');
-  Object.assign(previous.style,{top:bounds.top+'px',left:bounds.left+'px',width:bounds.width+'px'});
-  $('#panel').append(previous);
-  const fade=previous.animate([{opacity:1,transform:'translateX(0)'},{opacity:0,transform:'translateX(-10px)'}],
-   {duration:130,easing:'ease-out',fill:'forwards'});
-  fade.onfinish=()=>previous.remove()
- }
- sheet.replaceChildren(reading);
- if(!s.reveal)sheet.scrollTop=0;
- if(!moving)return;
- const timing={duration:235,easing:'cubic-bezier(.2,.7,.25,1)',fill:'backwards'};
- if(s.reveal){
-  const title=reading.querySelector('.focus-word');
-  const offset=previousTop===undefined?0:previousTop-title.getBoundingClientRect().top;
-  title.animate([{transform:'translateY('+offset+'px)'},{transform:'none'}],timing);
-  reading.querySelector('.word-details').animate([{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'none'}],{...timing,delay:65})
- }else if(previous){
-  reading.animate([{opacity:0,transform:'translateX(13px)'},{opacity:1,transform:'none'}],{...timing,delay:65})
- }
 }
 function flash(text){const n=$('#flash');if(!n)return;n.textContent=text;clearTimeout(flashTimer);flashTimer=setTimeout(()=>{n.textContent=''},1100)}
 function addFuzzy(){
@@ -196,22 +188,43 @@ function addFuzzy(){
 function step(){
  const s=session,e=s?.entries[s.pos];if(!e)return;
  if(!s.reveal){s.reveal=true;card();return}
- if(s.mode!=='fuzzy'){
+ if(s.pos===s.completed && s.mode!=='fuzzy'){
   const interval=st.fuzzy[wordId(e.word)]?0:Math.min(90,Math.max(1,(st.due[e.key]?.interval||0)*2));
   st.due[e.key]={word:brief(e.word),interval,at:Date.now()+(interval?interval*86400000:60000)};
   if(s.mode==='learn'){st.cursor[s.book]=(st.cursor[s.book]||0)+1;st.days[dateKey()]=(st.days[dateKey()]||0)+1}
   persist()
  }
- s.pos++;s.reveal=false;card()
+ s.pos++;s.completed=Math.max(s.completed,s.pos);s.reveal=false;card()
+}
+function previousWord(){
+ clearTap();
+ if(!session||session.pos===0)return;
+ session.pos--;session.reveal=false;card(-1);$('#sheet').focus({preventScroll:true})
 }
 dialog.addEventListener('click',event=>{
+ if(event.target.closest('[data-act="previous"]')){previousWord();return}
  if(event.target.closest('[data-act="return"]')){leave();return}
  if(!event.target.closest('#sheet')||!session)return;
  if(session.mode==='fuzzy'||event.detail===0){clearTap();step();return}
- if(tapTimer&&Math.hypot(event.clientX-tapPoint.x,event.clientY-tapPoint.y)<44){clearTap();addFuzzy();return}
- clearTap();tapPoint={x:event.clientX,y:event.clientY};tapTimer=setTimeout(()=>{clearTap();step()},330)
+ if(tapPoint && Math.hypot(event.clientX-tapPoint.x,event.clientY-tapPoint.y)<44){
+  const revealedOnFirstTap=tapPoint.revealed;
+  clearTap();
+  if(revealedOnFirstTap){session.reveal=false;card()}
+  addFuzzy();return
+ }
+ const revealed=!session.reveal;
+ clearTap();
+ if(revealed)step();
+ else if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+  const reading=$('#sheet .reading');
+  exitMotion=reading.animate?.([{opacity:1,transform:'none'},{opacity:.18,transform:'translateX(-8px)'}],
+   {duration:260,easing:'ease-in-out',fill:'forwards'})
+ }
+ tapPoint={x:event.clientX,y:event.clientY,revealed};
+ tapTimer=setTimeout(()=>{clearTap();if(!revealed)step()},260)
 });
 dialog.addEventListener('keydown',event=>{
+ if(event.key==='ArrowLeft' && session && !event.altKey && !event.ctrlKey && !event.metaKey){event.preventDefault();previousWord();return}
  if(!session?.entries[session.pos]||event.ctrlKey||event.altKey||event.metaKey)return;
  const action=event.key.toLowerCase();
  if(action==='m'&&session.mode!=='fuzzy'){event.preventDefault();clearTap();addFuzzy()}
