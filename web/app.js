@@ -77,6 +77,57 @@ function bookGrid(){
  return '<div class="shelf-grid">'+shelves.map(([title,description,ids,color])=>`<section class="shelf-group" style="--shelf-accent:${color}"><h3>${title}</h3><p>${description}</p><div class="plank">${ids.map(volume).join('')}</div></section>`).join('')+'</div>'
 }
 const btn=(action,label,cl='primary')=>'<button class="'+cl+'" data-act="'+action+'">'+label+'</button>';
+function definitionRows(word){
+ const senses=[], related=[];
+ // Older backups can have several related entries glued to a single sense.
+ const inlineTerm=/(?<=[\u3400-\u9fff；;）)])\s*(?=[A-Za-z][A-Za-z '’-]*[：:])/g;
+ for(const raw of word.trans){
+  const separatePos=raw.replace(/([\u3400-\u9fff）)\]】>；;。，])\s*(?=(?:abbr|adj|adv|vt|vi|v|n|prep|conj|pron|interj|int|aux|num)\.)/g,'$1\n');
+  const lines=separatePos.replace(inlineTerm,'\n').split('\n');
+  for(const line of lines){
+   const text=line.trim().replace(/[；;]$/,'');
+   if(!text)continue;
+   const match=text.match(/^([A-Za-z][^：:]*?)[：:]\s*(.+)$/);
+   if(match && !/[\u3400-\u9fff]/.test(match[1])){
+    related.push('<span class="gloss-row"><strong lang="en">'+esc(match[1])+'</strong>　'+esc(match[2].replace(/\|/g,'、'))+'</span>');
+   }else{
+    const notes=[];
+    const meaning=text.replace(/[（(\[]([^()（）\[\]]+)[）)\]]/g,(whole,inner)=>{
+     const note=inner.trim();
+     const form=/^(?:亦?作|也作|等于|亦称作|全称|简写为?|过去式|过去分词|现在分词|复数|名词|形容词|副词|动词|异体字)\s*[A-Za-z]/;
+     const origin=/[A-Za-z]\s*的?(?:ing形式|过去|现在分词|三单|第三人称|第二人称|复数|比较级|最高级|缩写|变形|变体|所有格|宾格|反身代词)/;
+     if(!form.test(note)&&!origin.test(note))return whole;
+     notes.push(...note.split(/[，,、]\s*|\s+(?=过去分词|现在分词|第三人称单数)/).filter(Boolean));
+     return '';
+    }).replace(/[；;]\s*常作\s+([A-Za-z]+\s+[^；;]+)/g,(_,form)=>{notes.push('常作 '+form);return ''}).trim();
+    if(/^也作\s+[a-z]/i.test(meaning))notes.push(meaning);
+    else if(meaning)senses.push('<span class="gloss-row">'+esc(meaning.replace(/^([a-z]+\.)(?=[\u3400-\u9fff（【\[])/,'$1 '))+'</span>');
+    for(const note of notes)related.push('<span class="gloss-row">'+esc(note)+'</span>');
+   }
+  }
+ }
+ return senses.join('')+(related.length?'<span class="related-words"><span class="related-title">相关词与词组</span>'+related.join('')+'</span>':'');
+}
+function listDefinition(id,word){
+ return '<span data-gloss="'+esc(id)+'">'+definitionRows(word)+'</span>';
+}
+async function refreshListDefinitions(){
+ const groups=new Map();
+ for(const node of document.querySelectorAll('[data-gloss]')){
+  const [book,index]=node.dataset.gloss.split('-').map(Number);
+  if(!books[book])continue;
+  if(!groups.has(book))groups.set(book,[]);
+  groups.get(book).push({node,index});
+ }
+ await Promise.all(Array.from(groups,async ([book,items])=>{
+  try{
+   const words=await loadBook(book);
+   for(const {node,index} of items){
+    if(node.isConnected && words[index])node.innerHTML=definitionRows(words[index]);
+   }
+  }catch{/* Keep the saved definition available offline. */}
+ }));
+}
 function render(){
  if(location.hash==='#study')return;
  page=location.hash.slice(1);if(!tabs[page])page='home';
@@ -107,10 +158,10 @@ function render(){
  else if(page==='fuzzy'){
   const entries=Object.entries(st.fuzzy);
   html+='<div class="row fuzzyhead"><p>共 '+entries.length+' 个词 · 单击查看释义，再点换词</p>'+(entries.length?btn('fuzzy',icon('play')+' 开始背诵'):'')+'</div>';
-  html+=entries.map(([id,{word}])=>'<div class="item row"><div><b lang="en">'+esc(word.name)+'</b><p>'+esc(word.trans.join('；'))+'</p></div><button class="outline" data-forget="'+esc(id)+'" aria-label="移除 '+esc(word.name)+'">移除</button></div>').join('')||'<div class="item empty">这里还没有模糊单词。背词时双击词卡，即可把那个词放到这里。</div>';
+  html+=entries.map(([id,{word}])=>'<div class="item row"><div><b lang="en">'+esc(word.name)+'</b><p>'+listDefinition(id,word)+'</p></div><button class="outline" data-forget="'+esc(id)+'" aria-label="移除 '+esc(word.name)+'">移除</button></div>').join('')||'<div class="item empty">这里还没有模糊单词。背词时双击词卡，即可把那个词放到这里。</div>';
  }
- else{html+='<p class="intro">学习时收藏的单词，共 '+Object.keys(st.saved).length+' 词。</p>';html+=Object.entries(st.saved).map(([k,w])=>'<div class="item row"><div><b>'+esc(w.name)+'</b><p>'+esc(w.trans.join('；'))+'</p></div><button class="outline" data-remove="'+esc(k)+'">移除</button></div>').join('')||'<div class="item empty">还没有收藏。查看词卡释义时按 F 键即可收藏。</div>'}
- document.body.dataset.page=page;$('#view').innerHTML=html;const sp=$('[data-act="dailySound"]');if(sp)sp.setAttribute('aria-label','朗读每日一词');
+ else{html+='<p class="intro">学习时收藏的单词，共 '+Object.keys(st.saved).length+' 词。</p>';html+=Object.entries(st.saved).map(([k,w])=>'<div class="item row"><div><b>'+esc(w.name)+'</b><p>'+listDefinition(k,w)+'</p></div><button class="outline" data-remove="'+esc(k)+'">移除</button></div>').join('')||'<div class="item empty">还没有收藏。查看词卡释义时按 F 键即可收藏。</div>'}
+ document.body.dataset.page=page;$('#view').innerHTML=html;if(page==='saved'||page==='fuzzy')refreshListDefinitions();const sp=$('[data-act="dailySound"]');if(sp)sp.setAttribute('aria-label','朗读每日一词');
 }
 const dialog=$('#dialog');
 function show(body){$('#panel').innerHTML=body;if(!dialog.open)dialog.showModal()}
@@ -185,7 +236,7 @@ function card(direction=1){
  if(s.reveal && !details){
   const content=document.createElement('span');content.className='word-details';
   content.innerHTML=(phonetic?'<span class="phonetic">/'+esc(phonetic)+'/</span>':'')+
-   '<span class="definition">'+esc(w.trans.join('；'))+'</span>'+
+   '<span class="definition">'+definitionRows(w)+'</span>'+
    (w.example?'<span class="example"><span lang="en">'+esc(w.example[0])+'</span><span>'+esc(w.example[1])+'</span></span>':'');
   reading.append(content);
   if(moving)content.animate([{opacity:0,transform:'translateY(5px)'},{opacity:1,transform:'none'}],{duration:190,easing:'ease-out'})
