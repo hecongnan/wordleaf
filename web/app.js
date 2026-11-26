@@ -199,7 +199,8 @@ async function start(mode){
    entries=entries.map(e=>{const [id,index]=e.key.split('-').map(Number);return {key:e.key,word:cache[id][index]||e.word}})
   }
   if(token!==loadId||!dialog.open)return;
-  session={mode,book,entries,pos:0,completed:0,reveal:false};
+  const startIndex=mode==='learn'?Math.min(st.cursor[book]||0,cache[book].length):0;
+  session={mode,book,entries,startIndex,historyCount:0,pos:0,completed:0,reveal:false};
   location.hash='study';card()
  }catch{if(token===loadId)show('<h2>词书加载失败</h2><p>请检查连接后重试。</p><div class="actions">'+btn(mode,'重新加载')+'</div>')}
 }
@@ -209,8 +210,9 @@ function card(direction=1){
  clearTap();clearTimeout(flashTimer);
  const s=session,entry=s.entries[s.pos];
  dialog.classList.toggle('focus-mode',!!entry);document.body.classList.toggle('studying',!!entry);
+ const canGoBack=s.pos>0||s.startIndex>0;
  if(!entry){
-  show('<h2>'+(s.entries.length?'本组背诵完成':'当前没有待背词条')+'</h2><p>共完成 '+s.pos+' 个词条。</p><div class="actions">'+(s.pos?btn('previous','上一个单词','outline'):'')+btn('return','返回'+(s.mode==='fuzzy'?'模糊单词':'学习空间'))+'</div>');return
+  show('<h2>'+(s.entries.length>s.historyCount?'本组背诵完成':'当前没有待背词条')+'</h2><p>共完成 '+(s.pos-s.historyCount)+' 个词条。</p><div class="actions">'+(canGoBack?btn('previous','上一个单词','outline'):'')+btn('return','返回'+(s.mode==='fuzzy'?'模糊单词':'学习空间'))+'</div>');return
  }
  const w=entry.word,phonetic=w.usphone||w.ukphone;
  let sheet=$('#sheet');
@@ -218,7 +220,7 @@ function card(direction=1){
   show('<button id="sheet"></button><button class="previous-word" data-act="previous" aria-keyshortcuts="ArrowLeft">‹ 上一个单词</button><span id="flash" role="status"></span>');
   sheet=$('#sheet');sheet.focus({preventScroll:true})
  }
- $('.previous-word').disabled=s.pos===0;
+ $('.previous-word').disabled=!canGoBack;
  $('#flash').textContent='';
  const moving=!matchMedia('(prefers-reduced-motion: reduce)').matches && typeof sheet.animate==='function';
  const sameWord=sheet.dataset.key===entry.key;
@@ -269,8 +271,16 @@ function step(){
 }
 function previousWord(){
  clearTap();
- if(!session||session.pos===0)return;
- session.pos--;session.reveal=false;card(-1);$('#sheet').focus({preventScroll:true})
+ if(!session)return;
+ const s=session;
+ if(s.pos===0){
+  if(!s.startIndex)return;
+  const index=--s.startIndex;
+  s.entries.unshift({key:s.book+'-'+index,word:cache[s.book][index]});
+  s.historyCount++;
+  s.completed++;
+ }else{s.pos--}
+ s.reveal=false;card(-1);$('#sheet').focus({preventScroll:true})
 }
 dialog.addEventListener('click',event=>{
  if(event.target.closest('[data-act="previous"]')){previousWord();return}
